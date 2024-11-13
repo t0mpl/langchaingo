@@ -1,18 +1,18 @@
 package llms
 
 import (
-	"encoding/json"
-
-	"github.com/tmc/langchaingo/schema"
+	"encoding/base64"
+	"fmt"
+	"io"
 )
 
 // MessageContent is the content of a message sent to a LLM. It has a role and a
 // sequence of parts. For example, it can represent one message in a chat
 // session sent by the user, in which case Role will be
-// schema.ChatMessageTypeHuman and Parts will be the sequence of items sent in
+// ChatMessageTypeHuman and Parts will be the sequence of items sent in
 // this specific message.
 type MessageContent struct {
-	Role  schema.ChatMessageType
+	Role  ChatMessageType
 	Parts []ContentPart
 }
 
@@ -37,6 +37,14 @@ func ImageURLPart(url string) ImageURLContent {
 	}
 }
 
+// ImageURLWithDetailPart creates a new ImageURLContent from the given URL and detail.
+func ImageURLWithDetailPart(url string, detail string) ImageURLContent {
+	return ImageURLContent{
+		URL:    url,
+		Detail: detail,
+	}
+}
+
 // ContentPart is an interface all parts of content have to implement.
 type ContentPart interface {
 	isPart()
@@ -47,29 +55,20 @@ type TextContent struct {
 	Text string
 }
 
-func (tc TextContent) MarshalJSON() ([]byte, error) {
-	m := map[string]string{
-		"type": "text",
-		"text": tc.Text,
-	}
-	return json.Marshal(m)
+func (tc TextContent) String() string {
+	return tc.Text
 }
 
 func (TextContent) isPart() {}
 
 // ImageURLContent is content with an URL pointing to an image.
 type ImageURLContent struct {
-	URL string
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"` // Detail is the detail of the image, e.g. "low", "high".
 }
 
-func (iuc ImageURLContent) MarshalJSON() ([]byte, error) {
-	m := map[string]any{
-		"type": "image_url",
-		"image_url": map[string]string{
-			"url": iuc.URL,
-		},
-	}
-	return json.Marshal(m)
+func (iuc ImageURLContent) String() string {
+	return iuc.URL
 }
 
 func (ImageURLContent) isPart() {}
@@ -80,16 +79,29 @@ type BinaryContent struct {
 	Data     []byte
 }
 
+func (bc BinaryContent) String() string {
+	base64Encoded := base64.StdEncoding.EncodeToString(bc.Data)
+	return "data:" + bc.MIMEType + ";base64," + base64Encoded
+}
+
 func (BinaryContent) isPart() {}
+
+// FunctionCall is the name and arguments of a function call.
+type FunctionCall struct {
+	// The name of the function to call.
+	Name string `json:"name"`
+	// The arguments to pass to the function, as a JSON string.
+	Arguments string `json:"arguments"`
+}
 
 // ToolCall is a call to a tool (as requested by the model) that should be executed.
 type ToolCall struct {
 	// ID is the unique identifier of the tool call.
 	ID string `json:"id"`
-	// Type is the type of the tool call.
+	// Type is the type of the tool call. Typically, this would be "function".
 	Type string `json:"type"`
 	// FunctionCall is the function call to be executed.
-	FunctionCall *schema.FunctionCall `json:"function,omitempty"`
+	FunctionCall *FunctionCall `json:"function,omitempty"`
 }
 
 func (ToolCall) isPart() {}
@@ -127,15 +139,15 @@ type ContentChoice struct {
 	// FuncCall is non-nil when the model asks to invoke a function/tool.
 	// If a model invokes more than one function/tool, this field will only
 	// contain the first one.
-	FuncCall *schema.FunctionCall
+	FuncCall *FunctionCall
 
 	// ToolCalls is a list of tool calls the model asks to invoke.
-	ToolCalls []schema.ToolCall
+	ToolCalls []ToolCall
 }
 
 // TextParts is a helper function to create a MessageContent with a role and a
 // list of text parts.
-func TextParts(role schema.ChatMessageType, parts ...string) MessageContent {
+func TextParts(role ChatMessageType, parts ...string) MessageContent {
 	result := MessageContent{
 		Role:  role,
 		Parts: []ContentPart{},
@@ -144,4 +156,29 @@ func TextParts(role schema.ChatMessageType, parts ...string) MessageContent {
 		result.Parts = append(result.Parts, TextPart(part))
 	}
 	return result
+}
+
+// ShowMessageContents is a debugging helper for MessageContent.
+func ShowMessageContents(w io.Writer, msgs []MessageContent) {
+	fmt.Fprintf(w, "MessageContent (len=%v)\n", len(msgs))
+	for i, mc := range msgs {
+		fmt.Fprintf(w, "[%d]: Role=%s\n", i, mc.Role)
+		for j, p := range mc.Parts {
+			fmt.Fprintf(w, "  Parts[%v]: ", j)
+			switch pp := p.(type) {
+			case TextContent:
+				fmt.Fprintf(w, "TextContent %q\n", pp.Text)
+			case ImageURLContent:
+				fmt.Fprintf(w, "ImageURLPart %q\n", pp.URL)
+			case BinaryContent:
+				fmt.Fprintf(w, "BinaryContent MIME=%q, size=%d\n", pp.MIMEType, len(pp.Data))
+			case ToolCall:
+				fmt.Fprintf(w, "ToolCall ID=%v, Type=%v, Func=%v(%v)\n", pp.ID, pp.Type, pp.FunctionCall.Name, pp.FunctionCall.Arguments)
+			case ToolCallResponse:
+				fmt.Fprintf(w, "ToolCallResponse ID=%v, Name=%v, Content=%v\n", pp.ToolCallID, pp.Name, pp.Content)
+			default:
+				fmt.Fprintf(w, "unknown type %T\n", pp)
+			}
+		}
+	}
 }
