@@ -43,14 +43,4 @@ func WithFilters(filters any) vectorstores.Option {
 	return func(p *vectorstores.Options) {
 		p.Filters = filters
 	}
-
-	if s.embedder == nil {
-		return ErrMissingEmbedded
-	}
-
-	if s.client == nil {
-		return ErrMissingOpensearchClient
-	}
-
-	return nil
 }

@@ -40,7 +40,7 @@ func (d *Detector) GetAttributeInfo(ctx context.Context, fileName string, fileTy
 		chains.WithTemperature(0),
 	)
 
-	promptChain.OutputParser = outputparser.NewJSONMarkdown()
+	promptChain.OutputParser = outputparser.NewRegexParser("(?s)```json(.+)```")
 
 	result, err := promptChain.Call(ctx, map[string]any{
 		"file_name":   fileName,
