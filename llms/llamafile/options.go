@@ -1,6 +1,11 @@
 package llamafile
 
-import "github.com/tmc/langchaingo/llms/llamafile/internal/llamafileclient"
+import (
+	"net/http"
+	"net/url"
+
+	"github.com/tmc/langchaingo/llms/llamafile/internal/llamafileclient"
+)
 
 type Option func(*llamafileclient.GenerationSettings)
 
@@ -197,5 +202,19 @@ func WithNCtx(val int) Option {
 func WithEmbeddingSize(val int) Option {
 	return func(g *llamafileclient.GenerationSettings) {
 		g.EmbeddingSize = val
+	}
+}
+
+// set llamafile URL
+func WithURL(val *url.URL) Option {
+	return func(g *llamafileclient.GenerationSettings) {
+		g.LlamafileServerURL = val
+	}
+}
+
+// set http client
+func WithHttpClient(val *http.Client) Option {
+	return func(g *llamafileclient.GenerationSettings) {
+		g.HTTPClient = val
 	}
 }
